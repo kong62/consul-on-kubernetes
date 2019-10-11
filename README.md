@@ -42,8 +42,14 @@ cd consul-on-kubernetes
 Install cfssl and cfssljson
 ```
 wget -c -O /usr/local/bin/cfssl https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
+```
+```
 wget -c -O /usr/local/bin/cfssljson https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64
+```
+```
 wget -c -O /usr/local/bin/cfssl-certinfo https://pkg.cfssl.org/R1.2/cfssl-certinfo_linux-amd64
+```
+```
 chmod +x /usr/local/bin/cfssl*
 ```
 
@@ -62,7 +68,7 @@ cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca/ca-config.json -profile=d
 At this point you should have the following files in the current working directory:
 
 ```
-ls -l |grep .pem
+# ls -l |grep .pem
 ca-key.pem
 ca.pem
 consul-key.pem
@@ -75,6 +81,8 @@ consul.pem
 
 ```
 GOSSIP_ENCRYPTION_KEY=$(docker run --rm -it consul:1.6.1 consul keygen)
+```
+```
 echo ${GOSSIP_ENCRYPTION_KEY}
 ```
 
@@ -123,7 +131,8 @@ alicloud-disk-available              diskplugin.csi.alibabacloud.com   23d
 alicloud-disk-efficiency (default)   diskplugin.csi.alibabacloud.com   23d
 alicloud-disk-essd                   diskplugin.csi.alibabacloud.com   23d
 alicloud-disk-ssd                    diskplugin.csi.alibabacloud.com   23d
-
+```
+```
 vi statefulsets/consul.yaml
   ...
       containers:
@@ -142,12 +151,21 @@ vi statefulsets/consul.yaml
             storage: 100Gi
         # set storageClassName
         storageClassName: alicloud-disk-efficiency
-
-
+```
+```
 kubectl create -f statefulsets/consul.yaml
 ```
 
 ### Create Ingress
+```
+yum install httpd-tools -y
+```
+```
+htpasswd -bc consul-auth.txt admin password
+```
+```
+kubectl create secret generic consul-secret --from-file consul-auth.txt
+```
 ```
 vi ingress.yaml 
 apiVersion: extensions/v1beta1
@@ -156,8 +174,8 @@ metadata:
   name: consul
   annotations:
     kubernetes.io/ingress.class: "traefik"
-    #ingress.kubernetes.io/auth-type: "basic"
-    #ingress.kubernetes.io/auth-secret: "authsecret"
+    ingress.kubernetes.io/auth-type: "basic"
+    ingress.kubernetes.io/auth-secret: "consul-secret"
 spec:
   rules:
   - host: consul.kong62.com
@@ -167,7 +185,8 @@ spec:
         backend:
           serviceName: consul
           servicePort: http
-
+```
+```
 kubectl create -f ingress.yaml
 ```
 
@@ -175,13 +194,12 @@ Each Consul member will be created one by one. Verify each member is `Running` b
 
 ```
 kubectl get pods
-```
-```
 NAME       READY     STATUS    RESTARTS   AGE
 consul-0   1/1       Running   0          20s
 consul-1   1/1       Running   0          20s
 consul-2   1/1       Running   0          20s
-
+```
+```
 kubectl get service
 NAME         TYPE           CLUSTER-IP      EXTERNAL-IP     PORT(S)                                                                            AGE
 consul       ClusterIP      None            <none>          8500/TCP,8443/TCP,8400/TCP,8301/TCP,8301/UDP,8302/TCP,8302/UDP,8300/TCP,8600/TCP   96s
@@ -200,17 +218,12 @@ The consul CLI can also be used to check the health of the cluster. In a new ter
 
 ```
 kubectl port-forward consul-0 8500:8500
-```
-```
 Forwarding from 127.0.0.1:8500 -> 8500
 Forwarding from [::1]:8500 -> 8500
 ```
 
 Run the `consul members` command to view the status of each cluster member.
 
-```
-consul members
-```
 ```
 kubectl exec -it consul-0 consul members
 Node      Address            Status  Type    Build  Protocol  DC   Segment
