@@ -39,6 +39,14 @@ cd consul-on-kubernetes
 
 ### Generate TLS Certificates
 
+Install cfssl and cfssljson
+```
+wget -c -O /usr/local/bin/cfssl https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
+wget -c -O /usr/local/bin/cfssljson https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64
+wget -c -O /usr/local/bin/cfssl-certinfo https://pkg.cfssl.org/R1.2/cfssl-certinfo_linux-amd64
+chmod +x /usr/local/bin/cfssl*
+```
+
 RPC communication between each Consul member will be encrypted using TLS. Initialize a Certificate Authority (CA):
 
 ```
