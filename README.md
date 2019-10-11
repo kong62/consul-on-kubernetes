@@ -56,17 +56,13 @@ cfssl gencert -initca ca/ca-csr.json | cfssljson -bare ca
 Create the Consul TLS certificate and private key:
 
 ```
-cfssl gencert \
-  -ca=ca.pem \
-  -ca-key=ca-key.pem \
-  -config=ca/ca-config.json \
-  -profile=default \
-  ca/consul-csr.json | cfssljson -bare consul
+cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca/ca-config.json -profile=default ca/consul-csr.json | cfssljson -bare consul
 ```
 
 At this point you should have the following files in the current working directory:
 
 ```
+ls -l |grep .pem
 ca-key.pem
 ca.pem
 consul-key.pem
@@ -78,7 +74,8 @@ consul.pem
 [Gossip communication](https://www.consul.io/docs/internals/gossip.html) between Consul members will be encrypted using a shared encryption key. Generate and store an encrypt key:
 
 ```
-GOSSIP_ENCRYPTION_KEY=$(consul keygen)
+GOSSIP_ENCRYPTION_KEY=$(docker run --rm -it consul:1.6.1 consul keygen)
+echo ${GOSSIP_ENCRYPTION_KEY}
 ```
 
 ### Create the Consul Secret and Configmap
@@ -88,11 +85,7 @@ The Consul cluster will be configured using a combination of CLI flags, TLS cert
 Store the gossip encryption key and TLS certificates in a Secret:
 
 ```
-kubectl create secret generic consul \
-  --from-literal="gossip-encryption-key=${GOSSIP_ENCRYPTION_KEY}" \
-  --from-file=ca.pem \
-  --from-file=consul.pem \
-  --from-file=consul-key.pem
+kubectl create secret generic consul --from-literal="gossip-encryption-key=${GOSSIP_ENCRYPTION_KEY}" --from-file=ca.pem --from-file=consul.pem --from-file=consul-key.pem
 ```
 
 Store the Consul server configuration file in a ConfigMap:
@@ -109,14 +102,14 @@ Create a headless service to expose each Consul member internally to the cluster
 kubectl create -f services/consul.yaml
 ```
 
-### Create the Consul Service Account
+### Create the Consul Service Account and ClusterRole
 
 ```
-kubectl apply -f serviceaccounts/consul.yaml
+kubectl create -f serviceaccounts/consul.yaml
 ```
 
 ```
-kubectl apply -f clusterroles/consul.yaml
+kubectl create -f clusterroles/consul.yaml
 ```
 
 ### Create the Consul StatefulSet
@@ -124,7 +117,58 @@ kubectl apply -f clusterroles/consul.yaml
 Deploy a three (3) node Consul cluster using a StatefulSet:
 
 ```
+kubectl get sc
+NAME                                 PROVISIONER                       AGE
+alicloud-disk-available              diskplugin.csi.alibabacloud.com   23d
+alicloud-disk-efficiency (default)   diskplugin.csi.alibabacloud.com   23d
+alicloud-disk-essd                   diskplugin.csi.alibabacloud.com   23d
+alicloud-disk-ssd                    diskplugin.csi.alibabacloud.com   23d
+
+vi statefulsets/consul.yaml
+  ...
+      containers:
+        - name: consul
+          # set image
+          image: "consul:1.6.1"
+  ...
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 100Gi
+        # set storageClassName
+        storageClassName: alicloud-disk-efficiency
+
+
 kubectl create -f statefulsets/consul.yaml
+```
+
+### Create Ingress
+```
+vi ingress.yaml 
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: consul
+  annotations:
+    kubernetes.io/ingress.class: "traefik"
+    #ingress.kubernetes.io/auth-type: "basic"
+    #ingress.kubernetes.io/auth-secret: "authsecret"
+spec:
+  rules:
+  - host: consul.kong62.com
+    http:
+      paths:
+      - path: /
+        backend:
+          serviceName: consul
+          servicePort: http
+
+kubectl create -f ingress.yaml
 ```
 
 Each Consul member will be created one by one. Verify each member is `Running` before moving to the next step.
@@ -137,6 +181,11 @@ NAME       READY     STATUS    RESTARTS   AGE
 consul-0   1/1       Running   0          20s
 consul-1   1/1       Running   0          20s
 consul-2   1/1       Running   0          20s
+
+kubectl get service
+NAME         TYPE           CLUSTER-IP      EXTERNAL-IP     PORT(S)                                                                            AGE
+consul       ClusterIP      None            <none>          8500/TCP,8443/TCP,8400/TCP,8301/TCP,8301/UDP,8302/TCP,8302/UDP,8300/TCP,8600/TCP   96s
+
 ```
 
 ### Verification
@@ -163,10 +212,11 @@ Run the `consul members` command to view the status of each cluster member.
 consul members
 ```
 ```
-Node      Address          Status  Type    Build     Protocol  DC   Segment
-consul-0  10.32.2.8:8301   alive   server  1.4.0rc1  2         dc1  <all>
-consul-1  10.32.1.7:8301   alive   server  1.4.0rc1  2         dc1  <all>
-consul-2  10.32.0.13:8301  alive   server  1.4.0rc1  2         dc1  <all>
+kubectl exec -it consul-0 consul members
+Node      Address            Status  Type    Build  Protocol  DC   Segment
+consul-0  172.31.9.248:8301  alive   server  1.6.1  2         dc1  <all>
+consul-1  172.31.10.98:8301  alive   server  1.6.1  2         dc1  <all>
+consul-2  172.31.6.106:8301  alive   server  1.6.1  2         dc1  <all>
 ```
 
 ### Accessing the Web UI
@@ -177,7 +227,7 @@ The Consul UI does not support any form of authentication out of the box so it s
 kubectl port-forward consul-0 8500:8500
 ```
 
-Visit http://127.0.0.1:8500 in your web browser.
+Visit http://127.0.0.1:8500 or http://consul.kong62.com in your web browser.
 
 ![Image of Consul UI](images/consul-ui.png)
 
